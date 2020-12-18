@@ -19,6 +19,8 @@ import cudf
 import cupy
 import pandas
 import numpy
+import dask_cudf
+
 from sklearn.metrics import silhouette_score
 
 
@@ -40,6 +42,13 @@ def batched_silhouette_scores(embeddings, clusters, batch_size=5000, seed=0, on_
         arraylib = cupy
         dflib = cudf
         AsArray = cupy.asnumpy
+
+        # Convert dask_cudf objects to cudf objects.
+        if isinstance(embeddings, dask_cudf.core.DataFrame):
+            embeddings = embeddings.compute()
+
+        if isinstance(clusters, dask_cudf.core.Series):
+            clusters = clusters.compute()
     else:
         arraylib = numpy
         dflib = pandas
@@ -70,7 +79,7 @@ def batched_silhouette_scores(embeddings, clusters, batch_size=5000, seed=0, on_
     n_chunks = int(math.ceil(len(embeddings) / batch_size))
     embeddings_chunked = arraylib.array_split(embeddings, n_chunks)
     clusters_chunked = arraylib.array_split(clusters, n_chunks)
-    
+
     # Calculate scores on batches and return the average
     scores = list(map(_silhouette_scores, zip(embeddings_chunked, clusters_chunked)))
     return numpy.array(scores).mean()
