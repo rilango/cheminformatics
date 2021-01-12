@@ -19,8 +19,8 @@ import cudf
 import cupy
 import pandas
 import numpy
-
 import dask_cudf
+
 from sklearn.metrics import silhouette_score
 from scipy.stats import spearmanr
 
