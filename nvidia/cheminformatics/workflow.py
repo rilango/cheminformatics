@@ -15,23 +15,28 @@
 # limitations under the License.
 
 import logging
+from math import tan
+import numpy
+
 from nvidia.cheminformatics.utils.fileio import log_results
-from nvidia.cheminformatics.utils.metrics import batched_silhouette_scores
+from nvidia.cheminformatics.utils.metrics import batched_silhouette_scores, spearman_rho
+from nvidia.cheminformatics.utils.distance import tanimoto_calculate
 
 from datetime import datetime
 
 import dask_cudf
 import dask_ml
 
+import cupy
 from cuml.manifold import UMAP as cuUMAP
 from cuml.dask.decomposition import PCA as cuDaskPCA
 from cuml.dask.cluster import KMeans as cuDaskKMeans
 from cuml.dask.manifold import UMAP as cuDaskUMAP
+from cuml.metrics import pairwise_distances
 
 import sklearn.cluster
 import sklearn.decomposition
 import umap
-
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +92,7 @@ class CpuWorkflow:
         mol_df['y'] = Xt[:, 1]
         mol_df['cluster'] = kmeans_float.labels_
         runtime = datetime.now() - task_start_time
+        
         logger.info('### Runtime UMAP time (hh:mm:ss.ms) {}'.format(runtime))
         log_results(task_start_time, 'cpu', 'umap', runtime, n_cpu=n_cpu)
 
@@ -166,8 +172,19 @@ class GpuWorkflow:
                                 client=self.client)
         Xt = umap_model.transform(gdf)
         runtime = datetime.now() - task_start_time
-        logger.info('### Runtime UMAP time (hh:mm:ss.ms) {}'.format(runtime))
-        log_results(task_start_time, 'gpu', 'umap', runtime, n_gpu=n_gpu)
+
+        # Sample to calculate spearman's rho
+        n_indexes = 5000
+        indexes = numpy.random.choice(numpy.array(range(X_train.shape[0])), size=n_indexes, replace=False)
+        X_train_sample = cupy.fromDlpack(X_train.to_dlpack())[indexes]
+        Xt_sample = cupy.fromDlpack(Xt.compute().to_dlpack())[indexes]
+        dist_array_tani = tanimoto_calculate(X_train_sample, calc_distance=True)
+        dist_array_eucl = pairwise_distances(Xt_sample)
+
+        spearman_mean = spearman_rho(dist_array_tani, dist_array_eucl).mean()
+
+        logger.info('### Runtime UMAP time (hh:mm:ss.ms) {} with {} of {}'.format(runtime, 'spearman_rho', spearman_mean))
+        log_results(task_start_time, 'gpu', 'umap', runtime, n_gpu=n_gpu, metric_name='spearman_rho', metric_value=spearman_mean)
 
         # Add back the column required for plotting and to correlating data
         # between re-clustering
