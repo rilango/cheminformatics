@@ -10,8 +10,11 @@
 .python_history
 .cupy
 .nv
-.cudf/
+.bashrc
 
+.keras/
+.vscode/
+.cudf/
 __pycache__
 dask-worker-space
 ./data
